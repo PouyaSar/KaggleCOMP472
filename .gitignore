@@ -1,0 +1,7 @@
+sentiment_train.csv
+
+
+*.csv
+.venv/
+__pycache__/
+.DS_Store
