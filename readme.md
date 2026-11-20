@@ -1,3 +1,12 @@
+# Academic Integrity
+Acknowledgemment use of the following external sources:
+AI tools (Gemini and ChatGPT)
+https://nycdatascience.com/blog/student-works/machine-learning/knn-classifier-from-scratch-numpy-only/
+https://github.com/scikit-learn/scikit-learn/blob/afe5bcd80/sklearn/tree/_classes.py#L699
+https://github.com/scikit-learn/scikit-learn/blob/afe5bcd80/sklearn/ensemble/_forest.py#L1174
+https://pandas.pydata.org/docs/reference/api/pandas.read_csv.html
+
+
 # k-nearest neighbours
 python3 k_nn.py image_train.csv --k 2 --metric cosine --normalization none --weights distance
 

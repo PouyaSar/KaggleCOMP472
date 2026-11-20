@@ -1,11 +1,3 @@
-"""
-Examples (run from the directory containing the competition CSVs):
-    python k_nn.py image_train.csv --k 5
-    python k_nn.py sentiment_train.csv --metric cosine --weights distance
-    python k_nn.py image_train.csv --test image_test.csv --output image_predictions.csv
-
-"""
-
 import argparse
 from pathlib import Path
 
@@ -14,12 +6,14 @@ import pandas as pd
 
 
 class KNNClassifier:
-    """Exact k-NN with bounded query batches and deterministic voting.
+    """
+    Find the k nearest training examples and use them for classification.
 
-    Standardization statistics are learned only in fit(). Equal vote totals
-    are resolved by choosing the smallest class label. For distance voting,
-    exact matches vote exclusively whenever any are present among the k
-    selected neighbours. Equal distances are resolved by training row order.
+    Calculate standardization values using only the training data in fit().
+    If labels receive equal votes, choose the smallest label.
+    With distance-weighted voting, if any selected neighbours exactly match
+    the query, only those matches vote.
+    If neighbours have equal distances, prefer the earlier training row.
     """
 
     def __init__(self, k=5, metric="euclidean", weights="uniform",

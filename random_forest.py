@@ -1,16 +1,3 @@
-"""From-scratch random forest for the COMP472 feature CSVs.
-
-Examples (run alongside decision_tree.py and k_nn.py):
-    python3 random_forest.py image_train.csv --n-estimators 50 --max-depth 20
-    python3 random_forest.py sentiment_train.csv --max-features sqrt
-    python3 random_forest.py image_train.csv --test image_test.csv --output forest_image_predictions.csv
-
-Each tree receives a bootstrap sample (sampling rows with replacement).
-At EACH node it searches a fresh random subset of features. Predictions
-use majority voting across trees; tied votes choose the smallest label.
-NumPy and Pandas are the only third-party dependencies; no sklearn models.
-"""
-
 import argparse
 from pathlib import Path
 from time import perf_counter
@@ -66,11 +53,8 @@ class _RandomizedTree(DecisionTreeClassifier):
 
 
 class RandomForestClassifier:
-    """Bootstrap randomized CART trees with hard majority voting.
-
+    """
     Defaults: 50 trees, maximum depth 20, sqrt(features) candidates per split.
-    All tree hyperparameters have the same meaning as in decision_tree.py.
-    A fixed random_state reproduces bootstraps, node selections, and votes.
     """
 
     def __init__(self, n_estimators=50, max_depth=20, max_features="sqrt",

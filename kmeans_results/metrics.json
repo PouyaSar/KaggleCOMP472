@@ -1,0 +1,59 @@
+{
+  "adjusted_rand_index": 0.015741835607035536,
+  "normalized_mutual_information": 0.041310394990625804,
+  "cluster_purity": 0.47791666666666666,
+  "same_label_pair_coassignment": 0.06558185379678252,
+  "same_cluster_pair_same_label": 0.3817143891220068,
+  "mean_label_dominant_cluster_fraction": 0.11766666666666666,
+  "n_rows": 12000,
+  "n_features": 768,
+  "n_classes": 3,
+  "n_clusters": 20,
+  "seed": 42,
+  "n_init": 5,
+  "max_iter": 200,
+  "preprocessing": "none; use supplied features as provided",
+  "min_vector_norm": 7.586517377104138,
+  "max_vector_norm": 13.598000297066879,
+  "fit_seconds": 24.356024583103135,
+  "inertia": 274468.3161855094,
+  "best_initialization": 4,
+  "best_iterations": 173,
+  "runs": [
+    {
+      "initialization": 1,
+      "iterations": 122,
+      "inertia": 275816.2396729702
+    },
+    {
+      "initialization": 2,
+      "iterations": 71,
+      "inertia": 275064.5623000419
+    },
+    {
+      "initialization": 3,
+      "iterations": 79,
+      "inertia": 274525.7795110413
+    },
+    {
+      "initialization": 4,
+      "iterations": 173,
+      "inertia": 274468.3161855094
+    },
+    {
+      "initialization": 5,
+      "iterations": 43,
+      "inertia": 274903.4350308452
+    }
+  ],
+  "chance_means": {
+    "adjusted_rand_index": -4.369965083665463e-06,
+    "normalized_mutual_information": 0.0007745624745525456,
+    "cluster_purity": 0.35243500000000005,
+    "same_label_pair_coassignment": 0.05725771151121114,
+    "same_cluster_pair_same_label": 0.3332643270461854,
+    "mean_label_dominant_cluster_fraction": 0.08303583333333334
+  },
+  "chance_permutations": 100,
+  "cluster_purity_upper_bound": 1.0
+}

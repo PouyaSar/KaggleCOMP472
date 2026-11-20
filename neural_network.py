@@ -1,19 +1,3 @@
-"""NumPy feed-forward neural network, trained from scratch for COMP472.
-
-Examples (run alongside k_nn.py):
-    python3 neural_network.py image_train.csv
-    python3 neural_network.py sentiment_train.csv --hidden-layers 256 64 --dropout 0.3
-    python3 neural_network.py image_train.csv --test image_test.csv --output nn_image_predictions.csv
-
-The output layer has one logit per training class: 50 for the full image
-training file, 3 for sentiment. Cross-entropy, backpropagation, dropout,
-Adam, and SGD are implemented here; no pretrained or library classifiers.
-Validation uses exactly the same stratified split as k_nn.py. Preprocessing
-is fitted only on training rows. Early stopping restores the weights with
-the highest validation accuracy (lowest cross-entropy breaks ties). For --test, a fresh network and scaler
-are fitted on ALL labeled rows for the selected number of epochs.
-"""
-
 import argparse
 from pathlib import Path
 from time import perf_counter
@@ -21,16 +5,19 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
+import torch
+from torch import nn
+from torch.utils.data import DataLoader, TensorDataset
+
 from k_nn import stratified_split
 
 
 class NeuralNetworkClassifier:
-    """Dense hidden layers, inverted dropout, and a softmax output.
-
-    Weight decay is L2 regularization: loss += decay/2 * sum(W**2).
-    It applies to weight matrices, not biases (including when using Adam).
-    Predict returns original class labels. Equal probabilities prefer the
-    smallest label. Fixed seeds reproduce initialization, shuffles, dropout.
+    """
+    PyTorch calculates gradients and updates weights using Adam or SGD.
+    Cross-entropy trains on raw scores; softmax is used for probabilities.
+    Weight decay penalizes weights, not biases.
+    Validation selects the highest accuracy, with lower loss breaking ties.
     """
 
     def __init__(self, hidden_layers=(256, 64), activation='relu',
@@ -86,99 +73,37 @@ class NeuralNetworkClassifier:
             return X / np.where(norms == 0, 1.0, norms)
         return X
 
-    def _activate(self, z):
-        if self.activation == 'relu':
-            return np.maximum(z, 0)
-        if self.activation == 'tanh':
-            return np.tanh(z)
-        # Stable sigmoid: exp(-abs(z)) cannot overflow.
-        exponent = np.exp(-np.abs(z))
-        return np.where(z >= 0, 1 / (1 + exponent), exponent / (1 + exponent))
-
-    def _derivative(self, z):
-        if self.activation == 'relu':
-            return z > 0
-        activated = self._activate(z)
-        if self.activation == 'tanh':
-            return 1 - activated ** 2
-        return activated * (1 - activated)
-
-    def _initialize(self):
+    def _build_model(self):
+        layers = []
         sizes = (self.n_features_in_,) + self.hidden_layers + (len(self.classes_),)
-        self.parameters_ = {}
-        self.n_layers_ = len(sizes) - 1
+        activation = {'relu': nn.ReLU, 'tanh': nn.Tanh, 'sigmoid': nn.Sigmoid}[self.activation]
         for i, (n_in, n_out) in enumerate(zip(sizes[:-1], sizes[1:])):
-            scale = np.sqrt(2 / n_in) if self.activation == 'relu' and i < self.n_layers_ - 1 else np.sqrt(1 / n_in)
-            self.parameters_[f'W{i}'] = (self.rng_.normal(size=(n_in, n_out)) * scale).astype(np.float32)
-            self.parameters_[f'b{i}'] = np.zeros(n_out, dtype=np.float32)
-        self.first_moment_ = {key: np.zeros_like(value) for key, value in self.parameters_.items()}
-        self.second_moment_ = {key: np.zeros_like(value) for key, value in self.parameters_.items()}
-        self.steps_ = 0
+            layers.append(nn.Linear(n_in, n_out))
+            if i < len(sizes) - 2:
+                layers.extend([activation(), nn.Dropout(self.dropout)])
+        self.model_ = nn.Sequential(*layers)
+        # Keep L2 regularization on weights only, as in the NumPy version.
+        groups = [
+            {'params': [p for name, p in self.model_.named_parameters() if name.endswith('weight')],
+             'weight_decay': self.weight_decay},
+            {'params': [p for name, p in self.model_.named_parameters() if name.endswith('bias')],
+             'weight_decay': 0.0},
+        ]
+        optimizer = torch.optim.Adam if self.optimizer == 'adam' else torch.optim.SGD
+        self.optimizer_ = optimizer(groups, lr=self.learning_rate)
+        self.loss_fn_ = nn.CrossEntropyLoss()
 
-    def _forward(self, X, training=False):
-        activations, preactivations, masks = [X], [], []
-        for i in range(self.n_layers_):
-            z = activations[-1] @ self.parameters_[f'W{i}'] + self.parameters_[f'b{i}']
-            if i == self.n_layers_ - 1:
-                return z, (activations, preactivations, masks)
-            a = self._activate(z)
-            mask = None
-            if training and self.dropout:
-                mask = (self.rng_.random(a.shape) >= self.dropout).astype(np.float32) / (1 - self.dropout)
-                a = a * mask
-            preactivations.append(z)
-            masks.append(mask)
-            activations.append(a)
-
-    @staticmethod
-    def _log_probabilities(logits):
-        shifted = logits - logits.max(axis=1, keepdims=True)
-        return shifted - np.log(np.exp(shifted).sum(axis=1, keepdims=True))
-
-    def _loss_and_gradients(self, X, encoded_y):
-        logits, (activations, preactivations, masks) = self._forward(X, training=True)
-        log_probs = self._log_probabilities(logits)
-        loss = -float(log_probs[np.arange(len(X)), encoded_y].mean())
-        delta = np.exp(log_probs)
-        delta[np.arange(len(X)), encoded_y] -= 1
-        delta /= len(X)
-        gradients = {}
-        for i in reversed(range(self.n_layers_)):
-            weight = self.parameters_[f'W{i}']
-            loss += self.weight_decay / 2 * float(np.sum(weight ** 2))
-            gradients[f'W{i}'] = activations[i].T @ delta + self.weight_decay * weight
-            gradients[f'b{i}'] = delta.sum(axis=0)
-            if i > 0:
-                delta = delta @ weight.T
-                if masks[i - 1] is not None:
-                    delta *= masks[i - 1]
-                delta *= self._derivative(preactivations[i - 1])
-        return loss, gradients
-
-    def _update(self, gradients):
-        self.steps_ += 1
-        for key, grad in gradients.items():
-            if self.optimizer == 'sgd':
-                self.parameters_[key] -= self.learning_rate * grad
-            else:
-                m, v = self.first_moment_[key], self.second_moment_[key]
-                m *= 0.9
-                m += 0.1 * grad
-                v *= 0.999
-                v += 0.001 * grad ** 2
-                m_hat = m / (1 - 0.9 ** self.steps_)
-                v_hat = v / (1 - 0.999 ** self.steps_)
-                self.parameters_[key] -= self.learning_rate * m_hat / (np.sqrt(v_hat) + 1e-8)
-
+    @torch.inference_mode()
     def _evaluate(self, X, encoded_y):
+        # eval() disables dropout, so validation uses the complete network.
+        self.model_.eval()
         loss, correct = 0.0, 0
         for start in range(0, len(X), self.batch_size):
             stop = start + self.batch_size
-            logits, _ = self._forward(X[start:stop])
+            logits = self.model_(X[start:stop])
             labels = encoded_y[start:stop]
-            log_probs = self._log_probabilities(logits)
-            loss -= float(log_probs[np.arange(len(labels)), labels].sum())
-            correct += int((logits.argmax(axis=1) == labels).sum())
+            loss += self.loss_fn_(logits, labels).item() * len(labels)
+            correct += (logits.argmax(dim=1) == labels).sum().item()
         return loss / len(X), correct / len(X)
 
     def fit(self, X, y, X_val=None, y_val=None, verbose=False):
@@ -201,21 +126,31 @@ class NeuralNetworkClassifier:
                     or pd.isna(y_val).any() or not np.isin(y_val, self.classes_).all()):
                 raise ValueError('Validation needs one known class label per row')
             encoded_val = np.searchsorted(self.classes_, y_val)
-        self.rng_ = np.random.default_rng(self.random_state)
-        self._initialize()
+        torch.manual_seed(self.random_state)
+        self._build_model()
+        X = torch.from_numpy(np.ascontiguousarray(X))
+        encoded_y = torch.as_tensor(encoded_y, dtype=torch.long)
+        if X_val is not None:
+            X_val = torch.from_numpy(np.ascontiguousarray(X_val))
+            encoded_val = torch.as_tensor(encoded_val, dtype=torch.long)
+        loader = DataLoader(TensorDataset(X, encoded_y), batch_size=self.batch_size,
+                            shuffle=True, num_workers=0,
+                            generator=torch.Generator().manual_seed(self.random_state))
         self.history_ = []
         self.best_epoch_ = 0
         self.best_validation_loss_ = float('inf')
         self.best_validation_accuracy_ = -float('inf')
         best_parameters, stale = None, 0
         for epoch in range(1, self.epochs + 1):
-            order = self.rng_.permutation(len(X))
-            for start in range(0, len(X), self.batch_size):
-                rows = order[start:start + self.batch_size]
-                loss, gradients = self._loss_and_gradients(X[rows], encoded_y[rows])
-                if not np.isfinite(loss) or not all(np.isfinite(g).all() for g in gradients.values()):
+            self.model_.train()  # Enable dropout for training batches.
+            for batch_X, batch_y in loader:
+                self.optimizer_.zero_grad(set_to_none=True)
+                logits = self.model_(batch_X)
+                loss = self.loss_fn_(logits, batch_y)
+                if not torch.isfinite(loss).item():
                     raise FloatingPointError('Training diverged; try a lower learning rate')
-                self._update(gradients)
+                loss.backward()  # PyTorch calculates gradients automatically.
+                self.optimizer_.step()
             train_loss, train_accuracy = self._evaluate(X, encoded_y)
             if not np.isfinite(train_loss):
                 raise FloatingPointError('Training diverged; try a lower learning rate')
@@ -233,7 +168,7 @@ class NeuralNetworkClassifier:
                     self.best_validation_accuracy_ = val_accuracy
                     self.best_validation_loss_ = val_loss
                     self.best_epoch_ = epoch
-                    best_parameters = {key: value.copy() for key, value in self.parameters_.items()}
+                    best_parameters = {key: value.detach().clone() for key, value in self.model_.state_dict().items()}
                     stale = 0
                 else:
                     stale += 1
@@ -248,18 +183,20 @@ class NeuralNetworkClassifier:
                 break
         self.n_epochs_ = len(self.history_)
         if best_parameters is not None:
-            self.parameters_ = best_parameters
+            self.model_.load_state_dict(best_parameters)
+        self.model_.eval()
         return self
 
+    @torch.inference_mode()
     def predict_proba(self, X):
-        if not hasattr(self, 'parameters_'):
+        if not hasattr(self, 'model_'):
             raise ValueError('Call fit before predict')
-        X = self._transform(self._matrix(X))
+        X = torch.from_numpy(np.ascontiguousarray(self._transform(self._matrix(X))))
+        self.model_.eval()
         probabilities = np.empty((len(X), len(self.classes_)), dtype=np.float32)
         for start in range(0, len(X), self.batch_size):
             stop = start + self.batch_size
-            logits, _ = self._forward(X[start:stop])
-            probabilities[start:stop] = np.exp(self._log_probabilities(logits))
+            probabilities[start:stop] = torch.softmax(self.model_(X[start:stop]), dim=1).numpy()
         return probabilities
 
     def predict(self, X):
@@ -291,6 +228,8 @@ def main():
     parser.add_argument('--test', type=Path)
     parser.add_argument('--output', type=Path, default=Path('nn_predictions.csv'))
     args = parser.parse_args()
+    # Small dense networks are fast on one CPU thread without thread overhead.
+    torch.set_num_threads(1)
     frame = pd.read_csv(args.train)
     features = [column for column in frame if column.startswith('feature_')]
     if not features or 'label' not in frame:

@@ -1,15 +1,3 @@
-"""From-scratch CART decision tree for the COMP472 feature CSVs.
-
-Run from the competition directory (requires NumPy, Pandas, and k_nn.py):
-    python3 decision_tree.py image_train.csv --max-depth 10
-    python3 decision_tree.py sentiment_train.csv --criterion entropy --max-depth 10
-    python3 decision_tree.py image_train.csv --test image_test.csv --output tree_image_predictions.csv
-
-At each node, search every feature and every distinct-value split. Choose
-its largest reduction in weighted Gini impurity or entropy. A leaf predicts
-its majority class; ties use the smallest class label. No sklearn models.
-"""
-
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,23 +6,22 @@ from time import perf_counter
 import numpy as np
 import pandas as pd
 
-# Reuse exactly the same seeded, stratified validation procedure as k-NN.
 from k_nn import stratified_split
 
 
 @dataclass
 class Node:
-    prediction: int  # Index into classes_, not necessarily the original label.
+    prediction: int 
     n_samples: int
     impurity: float
-    feature: int = -1  # -1 means this node is a leaf.
+    feature: int = -1  # -1 indicates node is a leaf.
     threshold: float = 0.0
     left: object = None
     right: object = None
 
 
 class DecisionTreeClassifier:
-    """Numerical CART with exhaustive greedy binary splits.
+    """Numerical classification and regression with exhaustive greedy binary splits.
 
     max_depth counts edges from the root (depth 0). None grows until another
     stopping condition applies. min_impurity_decrease is the decrease in
