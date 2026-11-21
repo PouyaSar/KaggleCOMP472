@@ -110,8 +110,7 @@ class RandomForestClassifier:
         X = DecisionTreeClassifier._matrix(X)
         if X.shape[1] != self.n_features_in_:
             raise ValueError("Prediction features must match training features")
-        # Map original labels to a common class index: bootstrap samples may
-        # omit classes, so individual trees can have different classes_ arrays.
+        # Match each tree's predicted labels to the forest's shared class list.
         votes = np.zeros((len(X), len(self.classes_)), dtype=np.int64)
         rows = np.arange(len(X))
         for tree in self.estimators_:

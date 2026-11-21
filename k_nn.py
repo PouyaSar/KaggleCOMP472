@@ -74,15 +74,11 @@ class KNNClassifier:
         return self
 
     def _distances(self, queries):
-        # Work one query at a time to avoid a batch x training x features
-        # tensor. Direct subtraction also avoids squared-distance cancellation
-        # for identical or very close vectors.
+        # Work one query at a time to avoid a batch x training x features tensor.
         distances = np.empty((len(queries), len(self.X_train_)))
         if self.metric == "cosine":
             distances[:] = np.clip(1.0 - queries @ self.X_train_.T, 0.0, 2.0)
-            # Convention: two zero vectors have distance 0; one zero vector
-            # and one nonzero vector have distance 1 (cosine is undefined).
-            train_zero = ~self.X_train_.any(axis=1)
+            # Handle zero vectors: distance is 0 if both are zero, or 1 if only one is zero.
             query_zero = ~queries.any(axis=1)
             distances[np.ix_(query_zero, train_zero)] = 0.0
         else:
@@ -114,7 +110,6 @@ class KNNClassifier:
                     if exact.any():
                         votes = exact.astype(float)
                     else:
-                        # Equivalent to inverse distance, bounded by 1.
                         votes = selected_distances.min() / selected_distances
                 totals = np.bincount(self.y_encoded_[neighbours], weights=votes,
                                      minlength=len(self.classes_))

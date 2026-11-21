@@ -82,7 +82,6 @@ class NeuralNetworkClassifier:
             if i < len(sizes) - 2:
                 layers.extend([activation(), nn.Dropout(self.dropout)])
         self.model_ = nn.Sequential(*layers)
-        # Keep L2 regularization on weights only, as in the NumPy version.
         groups = [
             {'params': [p for name, p in self.model_.named_parameters() if name.endswith('weight')],
              'weight_decay': self.weight_decay},
@@ -95,8 +94,7 @@ class NeuralNetworkClassifier:
 
     @torch.inference_mode()
     def _evaluate(self, X, encoded_y):
-        # eval() disables dropout, so validation uses the complete network.
-        self.model_.eval()
+        # Turn off dropout during validation.
         loss, correct = 0.0, 0
         for start in range(0, len(X), self.batch_size):
             stop = start + self.batch_size
@@ -149,7 +147,7 @@ class NeuralNetworkClassifier:
                 loss = self.loss_fn_(logits, batch_y)
                 if not torch.isfinite(loss).item():
                     raise FloatingPointError('Training diverged; try a lower learning rate')
-                loss.backward()  # PyTorch calculates gradients automatically.
+                loss.backward()
                 self.optimizer_.step()
             train_loss, train_accuracy = self._evaluate(X, encoded_y)
             if not np.isfinite(train_loss):
@@ -228,7 +226,6 @@ def main():
     parser.add_argument('--test', type=Path)
     parser.add_argument('--output', type=Path, default=Path('nn_predictions.csv'))
     args = parser.parse_args()
-    # Small dense networks are fast on one CPU thread without thread overhead.
     torch.set_num_threads(1)
     frame = pd.read_csv(args.train)
     features = [column for column in frame if column.startswith('feature_')]

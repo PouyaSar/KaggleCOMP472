@@ -84,8 +84,6 @@ class DecisionTreeClassifier:
             candidates = np.flatnonzero(size_ok & (values[:-1] < values[1:]))
             if len(candidates) == 0:
                 continue
-            # Cumulative class counts evaluate every possible threshold without
-            # repeatedly scanning both child subsets for each threshold.
             cumulative = np.zeros((n_rows, len(counts)), dtype=np.int64)
             cumulative[np.arange(n_rows), encoded_y[order]] = 1
             np.cumsum(cumulative, axis=0, out=cumulative)
@@ -98,8 +96,7 @@ class DecisionTreeClassifier:
             if gain > best_gain + 1e-12:
                 position = candidates[index]
                 low, high = values[position], values[position + 1]
-                # Avoid addition overflow and ensure floating-point rounding
-                # cannot move the threshold onto the first right-child value.
+                # Avoid addition overflow and ensure floating-point rounding cannot move the threshold onto the first right-child value.
                 threshold = low / 2.0 + high / 2.0
                 if threshold < low or threshold >= high:
                     threshold = low
@@ -124,7 +121,6 @@ class DecisionTreeClassifier:
 
         indices = np.arange(total_rows)
         self.root_ = make_node(indices)
-        # Iteration avoids Python's recursion limit for unbounded-depth trees.
         pending = [(self.root_, indices, 0)]
         while pending:
             node, indices, depth = pending.pop()
